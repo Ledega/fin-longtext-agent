@@ -1,0 +1,81 @@
+# =============================================================================
+# AFAC2026 - 金融长文本Agent 配置文件
+# =============================================================================
+
+# 数据集根路径
+data_root: "dataset/public_dataset_upload"
+
+# 原始文档路径配置
+raw_docs:
+  base_dir: "raw"
+  
+  # 各领域文档路径（相对于 data_root）
+  domains:
+    insurance:
+      dir: "insurance"
+      doc_pattern: "*.pdf"
+      description: "保险条款 (16份)"
+    
+    regulatory:
+      dir: "regulatory"
+      description: "监管法规 (26份)"
+      # 支持多种格式
+      html_dir: "html"       # HTML 格式
+      txt_dir: "txt"         # 文本格式
+      attachments_dir: "attachments"  # 附件 PDF
+
+    financial_contracts:
+      dir: "financial_contracts"
+      doc_pattern: "*.pdf"
+      description: "金融合同 (14份)"
+
+    financial_reports:
+      dir: "financial_reports"
+      doc_pattern: "*.*"
+      description: "财务报表 (10份)"
+
+    research:
+      dir: "research"
+      doc_pattern: "*.pdf"
+      description: "行业研报 (20份)"
+
+# 问题文件路径配置
+questions:
+  base_dir: "questions"
+  
+  group_a:
+    dir: "group_a"
+    files:
+      - "financial_contracts_questions.json"
+      - "financial_reports_questions.json"
+      - "insurance_questions.json"
+      - "regulatory_questions.json"
+      - "research_questions.json"
+  
+  # group_b 如有则在此配置
+  group_b:
+    dir: "group_b"
+    files: []
+
+# 输出配置
+output:
+  answer_file: "answer.csv"
+  evidence_file: "evidence.json"
+
+# 模型配置
+model:
+  provider: "dashscope"       # 阿里云百炼平台
+  default_model: "qwen3-plus"
+  api_key_env: "QWEN_API_KEY" # 从环境变量读取 API Key
+  max_retries: 3
+  timeout: 120
+
+# Token 预算 (评测用)
+token_budget: 5000000
+
+# PDF 解析配置
+pdf_parser:
+  # pdfminer: 纯文本提取 | pymupdf: 高质量提取（含布局）
+  method: "pymupdf"
+  chunk_size: 1000           # 分块大小（字符数）
+  chunk_overlap: 200         # 分块重叠（字符数）
