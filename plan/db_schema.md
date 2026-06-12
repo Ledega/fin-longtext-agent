@@ -4,7 +4,7 @@
 - 视领域再挂几张“领域特化表”（财报指标表、保险责任表等）。  
 - 快速查询 chunk 靠：向量索引 + 过滤字段（domain/doc_id/chunk_type）+ 主键索引。  
 
-下面按你给的目录结构具体说。 [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/46346423/0c0c7dd5-f857-48e8-b511-dfcd03f05635/tree.txt?AWSAccessKeyId=ASIA2F3EMEYE7P7FUG7C&Signature=o18fLKK1C0KSmapFs411AYi8hG0%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEEgaCXVzLWVhc3QtMSJIMEYCIQDylJ%2BrHpc2lWwtE2BSc%2FRby0l04Nz0POl2n%2F9tk%2BFkrgIhAOj3U10d3jQqmYAVk4Yw%2FeqxYv15yPZp3mUeHDwsdCpHKvMECBAQARoMNjk5NzUzMzA5NzA1IgwJ6rBJsKf4GLtDvwUq0AQWcCiSPhpmTpckcStQSl1t%2Fa4uf%2BiR1I9rhZQ8OMKoi%2BsXj7PD54OaShLS2EdOvVmCoSVaMyH%2FR6vjp83DHaF7uSTRNaS2YwzOKjx4%2Baz5cF2u%2B6NcdOsxFTnBZzgGu6VW2rs2DQ1%2B79fMuOv98mGp144cB13gp81rYCKEGDevAdyjUZyT441UaJ7QSxssAN9R9r2vCHIGTX1%2FX6vADUuf%2BtjI6GyeRFFF8qsfHOIUYoOYC288H12TmBqILcu2SVC2uy9wKKT6VFA6ZXcj8CyzR5Z7VDX1FzXtE%2FteAgCUa%2BNEZO1TzD%2B64Zhg3EX%2FowkhbTsbd6h2wL5XKTz8y5qOKEifVy4zPHC%2FnoYVsQn%2FVc4189wSVJYuW4ejh%2FcKdiqiP5h0h5QGHF69kzfx2QnbbbrDS%2FxQ4tTLLtPRUaNhM2ecvmkqLUjLY3vLj3Mm5q55Mk%2F2QeG73twhu6HeDn4lrY%2F3ZeASvNuWxCuOWgimof9PZ5xJlZ%2FTOB%2BK%2F3iQtIm12ldU9pvAFnw8PLBOgcfvVcKfvJsMnxm5sZdyllboD%2FgAPONquFTRlXyEMimKWSGSW%2Bx9uQOJVtauDXfCREtxqdGnflKqrQjojqTsISSk7QqDhDI9tvOQPDlr9o%2F7v9TzHUtknOIf2UciS%2BDNVNm84I1SBrFdKU0XqLb7Gol0e%2Bf02nCtUpeHh3sZ%2BoR094N1V7UjQDKIuONDZgIwhXjogNBiWmDen59nb6%2BmaT6CjcLbBn7%2FYeo3XGJHDVi4%2FZhV6p%2FSh76e8gtlWNan39YLMIHfrtEGOpcBbgtaPipkH%2Bxoyg5LGg2DjIPQfNNrxruOsKTsjQIXS%2BRI6vqDe7RbySAwQiPEB4o3qjKSKpnq7AqVlanODIqIa%2BQPVlQyheaJD0HW%2FSulvM9OZmfxJWBg74J6T5g6e%2F3dmgAEV8kaBh0SpMcZ8CLwR7QLlNCbQ27rWLcWn6SDuDZgZkj8dJdh9aZA1H2%2Fixv4Z4FksNxnOg%3D%3D&Expires=1781251412)
+下面按你给的目录结构具体说。 
 
 ***
 
@@ -135,19 +135,19 @@ CREATE TABLE insurance_rules (
 ### 5.1 RAG 检索路径
 
 1）**在线检索用向量库 + filter**  
-- 对 `chunks.text` 做 embedding，存到向量库（pgvector/Milvus/FAISS 等），只存：`embedding, chunk_id, doc_id, domain, chunk_type`。 [learn.microsoft](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-enrichment-phase)
+- 对 `chunks.text` 做 embedding，存到向量库（pgvector/Milvus/FAISS 等），只存：`embedding, chunk_id, doc_id, domain, chunk_type`。 
 - 查询时：  
   - 已知 domain：加 `domain = 'regulatory'` 过滤；  
   - A 榜已知 doc_ids：加 `doc_id in (...)` 过滤，只在这些文档内搜；  
   - B 榜无 doc_ids：先用题干在文档级做粗召回，再在候选 `doc_id` 列表内检索 chunk。  
 
 2）**拿到 chunk_id → 回表**  
-- 向量库返回一堆 `(chunk_id, score)`，你再到 `chunks` 表里用 PK 查 `text, section_path, page_no, clause_no`，拼成上下文给 Qwen。 [community.openai](https://community.openai.com/t/source-document-chunk-identification-and-highlighting-for-rag-usecase/883302)
+- 向量库返回一堆 `(chunk_id, score)`，你再到 `chunks` 表里用 PK 查 `text, section_path, page_no, clause_no`，拼成上下文给 Qwen。 
 
 ### 5.2 手动定位 / 溯源
 
 - 你在日志里记录“这道题最终用到了哪些 chunk_id”，要追查时可以 `SELECT * FROM chunks WHERE chunk_id = ...`，直接定位到页码和章节。  
-- 如果后面要做“证据高亮”，也可以按 `doc_id + page_no` 再结合 chunk 内的 offset 定位到原 PDF/HTML。 [community.openai](https://community.openai.com/t/source-document-chunk-identification-and-highlighting-for-rag-usecase/883302)
+- 如果后面要做“证据高亮”，也可以按 `doc_id + page_no` 再结合 chunk 内的 offset 定位到原 PDF/HTML。 
 
 ***
 

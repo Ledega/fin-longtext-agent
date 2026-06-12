@@ -1,0 +1,11 @@
+[project]
+name = "fin-longtext-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "pdfminer-six>=20260107",
+    "pyyaml>=6.0.3",
+]
