@@ -8,4 +8,9 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "pdfminer-six>=20260107",
     "pyyaml>=6.0.3",
+    "jieba>=0.42.1",
+    "python-dotenv>=1.1.0",
+    "langchain-openai>=0.3.0",
+    "langchain-core>=0.3.0",
+    "bm25s>=0.3.0",
 ]

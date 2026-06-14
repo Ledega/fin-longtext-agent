@@ -1,1 +1,31 @@
+# === 生成产物 ===
+answer.csv
+
+# === 数据文件（可从原始文档重建） ===
+data/fin_longtext.db
+data/chunks.jsonl
+
+# === 索引文件（可从数据库重建） ===
+data/indices/
+
+# === 环境变量 ===
+.env
+
+# === macOS 系统残留 ===
+.DS_Store
+**/.DS_Store
+
+# === Python ===
+*.pyc
+__pycache__/
+*.pyo
+*.egg-info/
+.EGGS/
+
+# === 虚拟环境 ===
+.venv/
+.uv/
+uv.lock
+
+# === 原始数据集（需手动放置） ===
 dataset/

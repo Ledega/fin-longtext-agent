@@ -12,6 +12,55 @@ from typing import Dict, List, Optional
 # 项目根目录
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
+DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
+
+# 自动加载 .env 文件（如果存在）
+_env_loaded = False
+
+
+def load_env_file(env_path: Optional[Path] = None) -> None:
+    """加载 .env 文件中的环境变量到 os.environ"""
+    global _env_loaded
+    if _env_loaded:
+        return
+
+    env_path = env_path or DEFAULT_ENV_PATH
+    if not env_path.exists():
+        return  # .env 不存在，跳过（用户可能已手动 export）
+
+    try:
+        from dotenv import load_dotenv
+        loaded = load_dotenv(dotenv_path=str(env_path), override=False)
+        if loaded:
+            print(f"[Config] 已加载环境变量: {env_path}")
+        _env_loaded = True
+    except ImportError:
+        # python-dotenv 未安装，尝试手动解析简单格式
+        _load_env_simple(env_path)
+        _env_loaded = True
+
+
+def _load_env_simple(env_path: Path) -> None:
+    """简易 .env 解析器（不依赖 python-dotenv）"""
+    if not env_path.exists():
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+    print(f"[Config] 已加载环境变量（简易模式）: {env_path}")
+
+
+# 模块导入时自动加载 .env
+load_env_file()
 
 
 class ConfigLoader:
