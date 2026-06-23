@@ -2,6 +2,9 @@
 读取 docs 表中注册的文档，逐一解析文本、分块，结果写入：
 1) SQLite chunks 表
 2) chunks.jsonl 文件
+
+⚠️ 已离线完成，当前不需要运行此脚本。
+   保留代码仅作逻辑参考。
 """
 
 import sys
@@ -109,83 +112,9 @@ def process_doc(
     return len(chunks)
 
 
-def main():
-    cfg = get_config()
-
-    # 数据库路径
-    db_path = PROJECT_ROOT / "data" / "fin_longtext.db"
-    if not db_path.exists():
-        print(f"[错误] 数据库不存在: {db_path}")
-        print("请先运行 python src/db/build_docs.py")
-        return
-
-    # 确保 JSONL 输出目录存在
-    JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    # 连接数据库
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON;")
-
-    # 确保 chunks 表存在
-    init_db(str(db_path))
-
-    # 清空旧 chunks 数据（重新生成时）
-    conn.execute("DELETE FROM chunks")
-    conn.commit()
-
-    # 加载所有文档
-    docs = load_docs_from_db(conn)
-    print(f"共加载 {len(docs)} 篇文档，开始分块处理...\n")
-
-    total_stats = {
-        "docs": len(docs),
-        "docs_succeeded": 0,
-        "chunks": 0,
-        "tokens": 0,
-    }
-
-    # 打开 JSONL 文件
-    with open(JSONL_PATH, "w", encoding="utf-8") as jsonl_f:
-        for i, doc in enumerate(docs, 1):
-            process_doc(conn, doc, cfg, jsonl_f, total_stats)
-
-            # 每处理 10 篇文档提交一次，避免事务过大
-            if i % 10 == 0:
-                conn.commit()
-
-        # 最后再提交一次
-        conn.commit()
-
-    # 输出统计
-    print(f"\n{'='*60}")
-    print(f"分块完成！统计汇总:")
-    print(f"  总文档数:         {total_stats['docs']}")
-    print(f"  成功处理:         {total_stats['docs_succeeded']}")
-    print(f"  总 chunk 数:      {total_stats['chunks']}")
-    print(f"  总预估 token 数:  {total_stats['tokens']}")
-    print(f"  平均 chunk/文档:  {total_stats['chunks'] / max(total_stats['docs_succeeded'], 1):.1f}")
-
-    # 验证
-    db_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-    print(f"\n验证:")
-    print(f"  SQLite chunks 表行数: {db_count}")
-
-    # JSONL 行数
-    with open(JSONL_PATH, "r", encoding="utf-8") as f:
-        jsonl_count = sum(1 for _ in f)
-    print(f"  JSONL 文件行数:       {jsonl_count}")
-
-    # 各领域分布
-    print(f"\n各领域 chunk 分布:")
-    domain_rows = conn.execute(
-        "SELECT domain, COUNT(*) as cnt FROM chunks GROUP BY domain ORDER BY cnt DESC"
-    ).fetchall()
-    for domain, cnt in domain_rows:
-        print(f"  {domain:<22}  {cnt:>6} chunks")
-
-    conn.close()
-    print(f"\nJSONL 文件: {JSONL_PATH}")
-
-
 if __name__ == "__main__":
-    main()
+    # ╔══════════════════════════════════════════════════════════╗
+    # ║  离线分块处理已完成，不自动运行                        ║
+    # ║  如确需重新分块，取消下方注释即可                     ║
+    # ╚══════════════════════════════════════════════════════════╝
+    pass

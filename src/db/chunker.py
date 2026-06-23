@@ -43,63 +43,56 @@ def approx_tokens(text: str) -> int:
     return int(chinese_chars * 1.5 + other_chars / 4) + 10
 
 
-# ──────────────────────────────────────────────
-# 文本提取
-# ──────────────────────────────────────────────
-
-def extract_text_from_pdf(file_path: Path) -> List[Tuple[int, str]]:
-    """
-    从 PDF 提取文本，按页返回 [(page_no, text), ...]
-
-    使用 pdfminer.six 作为 PDF 解析引擎，兼容性更好。
-
-    Returns:
-        List[Tuple[int, str]] 每页的 (页码, 文本)，页码从 1 开始
-    """
-    from pdfminer.high_level import extract_pages
-    from pdfminer.layout import LTTextContainer, LTChar, LAParams
-
-    laparams = LAParams(
-        line_margin=0.5,
-        word_margin=0.1,
-        char_margin=2.0,
-        boxes_flow=0.5,
-        detect_vertical=False,
-    )
-
-    pages: List[Tuple[int, str]] = []
-    for page_no, page_layout in enumerate(extract_pages(str(file_path), laparams=laparams), start=1):
-        text = ""
-        for element in page_layout:
-            if isinstance(element, LTTextContainer):
-                text += element.get_text()
-        text = text.strip()
-        if text:
-            pages.append((page_no, text))
-    return pages
-
-
-def extract_text_from_html(file_path: Path) -> List[Tuple[int, str]]:
-    """
-    从 HTML 提取正文文本（监管法规领域使用）
-
-    Returns:
-        List[Tuple[int, str]] 单页的 [(1, text), ...]
-    """
-    from bs4 import BeautifulSoup
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        soup = BeautifulSoup(f.read(), "html.parser")
-
-    # 移除 script, style 等标签
-    for tag in soup(["script", "style", "nav", "footer", "header"]):
-        tag.decompose()
-
-    # 提取正文
-    body = soup.find("body")
-    text = body.get_text(separator="\n") if body else soup.get_text(separator="\n")
-    text = re.sub(r'\n\s*\n', '\n\n', text).strip()
-    return [(1, text)]
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  文本提取（已离线完成，注释保留仅作参考）                    ║
+# ╚══════════════════════════════════════════════════════════════╝
+# 
+# def extract_text_from_pdf(file_path: Path) -> List[Tuple[int, str]]:
+#     """
+#     从 PDF 提取文本，按页返回 [(page_no, text), ...]
+#     使用 pdfminer.six 作为 PDF 解析引擎。
+#     """
+#     from pdfminer.high_level import extract_pages
+#     from pdfminer.layout import LTTextContainer, LTChar, LAParams
+# 
+#     laparams = LAParams(
+#         line_margin=0.5,
+#         word_margin=0.1,
+#         char_margin=2.0,
+#         boxes_flow=0.5,
+#         detect_vertical=False,
+#     )
+# 
+#     pages: List[Tuple[int, str]] = []
+#     for page_no, page_layout in enumerate(extract_pages(str(file_path), laparams=laparams), start=1):
+#         text = ""
+#         for element in page_layout:
+#             if isinstance(element, LTTextContainer):
+#                 text += element.get_text()
+#         text = text.strip()
+#         if text:
+#             pages.append((page_no, text))
+#     return pages
+# 
+# 
+# def extract_text_from_html(file_path: Path) -> List[Tuple[int, str]]:
+#     """
+#     从 HTML 提取正文文本（监管法规领域使用）
+#     """
+#     from bs4 import BeautifulSoup
+# 
+#     with open(file_path, "r", encoding="utf-8") as f:
+#         soup = BeautifulSoup(f.read(), "html.parser")
+# 
+#     # 移除 script, style 等标签
+#     for tag in soup(["script", "style", "nav", "footer", "header"]):
+#         tag.decompose()
+# 
+#     # 提取正文
+#     body = soup.find("body")
+#     text = body.get_text(separator="\n") if body else soup.get_text(separator="\n")
+#     text = re.sub(r'\n\s*\n', '\n\n', text).strip()
+#     return [(1, text)]
 
 
 # ──────────────────────────────────────────────
@@ -340,29 +333,25 @@ def chunk_document(
     return chunks
 
 
-def chunk_document_from_file(file_path: Path, doc_id: str, domain: str) -> List[dict]:
-    """
-    从文件读取并分块。
-
-    Args:
-        file_path: 文档文件路径
-        doc_id: 文档 ID
-        domain: 领域标识
-
-    Returns:
-        List[dict] chunk 列表
-    """
-    ext = file_path.suffix.lower()
-
-    if ext == ".pdf":
-        page_texts = extract_text_from_pdf(file_path)
-    elif ext == ".html":
-        page_texts = extract_text_from_html(file_path)
-    elif ext == ".txt":
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        page_texts = [(1, text)]
-    else:
-        raise ValueError(f"不支持的文件类型: {ext}")
-
-    return chunk_document(doc_id, domain, page_texts)
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  chunk_document_from_file（已离线完成，注释保留仅作参考）    ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+# def chunk_document_from_file(file_path: Path, doc_id: str, domain: str) -> List[dict]:
+#     """
+#     从文件读取并分块。
+#     """
+#     ext = file_path.suffix.lower()
+#
+#     if ext == ".pdf":
+#         page_texts = extract_text_from_pdf(file_path)
+#     elif ext == ".html":
+#         page_texts = extract_text_from_html(file_path)
+#     elif ext == ".txt":
+#         with open(file_path, "r", encoding="utf-8") as f:
+#             text = f.read()
+#         page_texts = [(1, text)]
+#     else:
+#         raise ValueError(f"不支持的文件类型: {ext}")
+#
+#     return chunk_document(doc_id, domain, page_texts)

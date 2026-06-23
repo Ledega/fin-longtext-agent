@@ -1,5 +1,8 @@
 """
 扫描五大领域的原始文档，提取元数据并写入 docs 表。
+
+⚠️ 已离线完成，当前不需要运行此脚本。
+   保留代码仅作逻辑参考。
 """
 
 import sys
@@ -27,18 +30,10 @@ DOMAIN_PREFIX = {
 def derive_doc_id(file_path: Path, domain: str) -> str:
     """
     根据文件路径和领域推导 doc_id（遵循 db_schema 规范）
-
-    规则：
-      - financial_contracts: 文件名 stem 前加 'fc_'，如 text01 → fc_text01
-      - insurance: 文件名 stem 前加 'ins_', 如 1 → ins_1
-      - financial_reports: 直接用文件名 stem，如 annual_byd_2024_report
-      - regulatory html: 直接用文件名 stem，如 csrc_0001, csrc_0001_att1
-      - research: 直接用文件名 stem，如 pack2_text01
     """
     stem = file_path.stem
     prefix = DOMAIN_PREFIX.get(domain, "")
     if prefix:
-        # 避免重复加前缀
         if not stem.startswith(prefix):
             return f"{prefix}{stem}"
     return stem
@@ -70,7 +65,7 @@ def get_source_type(file_path: Path) -> str:
 
 
 def is_parent_stub(file_path: Path, domain: str) -> bool:
-    """判断是否是 regulatory 的 parent stub 文件（html 目录下的主文档）"""
+    """判断是否是 regulatory 的 parent stub 文件"""
     if domain != "regulatory":
         return False
     return file_path.suffix.lower() == ".html"
@@ -79,16 +74,12 @@ def is_parent_stub(file_path: Path, domain: str) -> bool:
 def get_parent_doc_id(file_path: Path, domain: str) -> str | None:
     """
     获取 parent_doc_id
-
-    regulatory attachments 目录下的文件，其 parent 是 html 目录中同 id 的文件
-    例如 attachments/csrc_0001_att1.pdf → parent = 'csrc_0001'
     """
     if domain != "regulatory":
         return None
     parts = file_path.parts
     if "attachments" in parts:
         stem = file_path.stem
-        # csrc_0001_att1 → csrc_0001
         idx = stem.find("_att")
         if idx != -1:
             return stem[:idx]
@@ -111,19 +102,10 @@ def scan_and_insert(conn: sqlite3.Connection) -> int:
             doc_id = derive_doc_id(file_path, domain)
             source_type = get_source_type(file_path)
 
-            # 获取相对路径（相对于 data_root）
             rel_path = file_path.relative_to(cfg.data_root)
-
-            # 提取 title（用文件名，去掉扩展名）
             title = file_path.stem
-
-            # 页数（仅 PDF）
             pages = get_pdf_page_count(file_path) if source_type == "pdf" else 0
-
-            # parent_doc_id
             parent_doc_id = get_parent_doc_id(file_path, domain)
-
-            # 判断 split（A 榜或 B 榜）— 目前全量都是 A 榜数据
             split = "A"
 
             try:
@@ -141,34 +123,23 @@ def scan_and_insert(conn: sqlite3.Connection) -> int:
     return inserted
 
 
-def main():
-    cfg = get_config()
-
-    # SQLite 数据库路径（放在项目根目录）
-    db_path = PROJECT_ROOT / "data" / "fin_longtext.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # 初始化数据库
-    init_db(str(db_path))
-
-    # 连接并插入
-    conn = sqlite3.connect(str(db_path))
-    conn.execute("PRAGMA foreign_keys=ON;")
-
-    print("开始扫描文档并插入 docs 表...")
-    count = scan_and_insert(conn)
-    print(f"完成！共插入/更新 {count} 条文档记录。")
-
-    # 验证
-    rows = conn.execute("SELECT doc_id, domain, file_path, pages FROM docs ORDER BY domain, doc_id").fetchall()
-    print("\nDocs 表内容预览:")
-    print(f"  {'doc_id':<30} {'domain':<22} {'pages':<6} {'file_path'}")
-    print(f"  {'-'*30} {'-'*22} {'-'*6} {'-'*40}")
-    for row in rows:
-        print(f"  {row[0]:<30} {row[1]:<22} {str(row[2] or ''):<6} {row[3]}")
-
-    conn.close()
-
-
 if __name__ == "__main__":
-    main()
+    # ╔══════════════════════════════════════════════════════════╗
+    # ║  离线文档扫描已完成，不自动运行                        ║
+    # ║  如确需重新扫描，取消下方注释即可                     ║
+    # ╚══════════════════════════════════════════════════════════╝
+    pass
+    # cfg = get_config()
+    # db_path = PROJECT_ROOT / "data" / "fin_longtext.db"
+    # db_path.parent.mkdir(parents=True, exist_ok=True)
+    # init_db(str(db_path))
+    # conn = sqlite3.connect(str(db_path))
+    # conn.execute("PRAGMA foreign_keys=ON;")
+    # print("开始扫描文档并插入 docs 表...")
+    # count = scan_and_insert(conn)
+    # print(f"完成！共插入/更新 {count} 条文档记录。")
+    # rows = conn.execute("SELECT doc_id, domain, file_path, pages FROM docs ORDER BY domain, doc_id").fetchall()
+    # print("\nDocs 表内容预览:")
+    # for row in rows:
+    #     print(f"  {row[0]:<30} {row[1]:<22} {str(row[2] or ''):<6} {row[3]}")
+    # conn.close()

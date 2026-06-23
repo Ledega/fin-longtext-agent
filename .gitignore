@@ -29,3 +29,7 @@ uv.lock
 
 # === 原始数据集（需手动放置） ===
 dataset/
+
+# === mineru 离线解析输出目录（软链接，指向外部路径） ===
+# 创建方式: mklink /J data\mineru_output D:\afac\processed_data\my-mineru-workspace\output
+data/mineru_output/
