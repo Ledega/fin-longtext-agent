@@ -1,0 +1,9 @@
+# === 文本文件统一换行符 ===
+*.py text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.csv text eol=lf
+*.txt text eol=lf

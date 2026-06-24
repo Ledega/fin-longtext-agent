@@ -34,5 +34,7 @@ dataset/
 # 创建方式: mklink /J data\mineru_output D:\afac\processed_data\my-mineru-workspace\output
 data/mineru_output/
 
-# === MD 分块输出（可从 mineru_output 重建） ===
-data/chunks/
+# === ML 模型文件（LFS 管理） ===
+# *.pth
+# *.pt
+# *.h5
