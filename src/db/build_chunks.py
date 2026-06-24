@@ -20,7 +20,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.config_loader import get_config
 from src.db.schema import init_db
-from src.db.chunker import chunk_document_from_file
+# ⚠️ chunk_document_from_file 已离线完成并注释，此处不再导入
+# from src.db.chunker import chunk_document_from_file
 
 
 # JSONL 持久化路径

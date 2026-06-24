@@ -13,6 +13,8 @@ dependencies = [
     "langchain-openai>=0.3.0",
     "langchain-core>=0.3.0",
     "bm25s>=0.3.0",
+    "pymilvus>=3.0.0",
+    "langchain-text-splitters>=0.3.0",
 ]
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

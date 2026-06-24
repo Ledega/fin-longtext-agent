@@ -33,3 +33,6 @@ dataset/
 # === mineru 离线解析输出目录（软链接，指向外部路径） ===
 # 创建方式: mklink /J data\mineru_output D:\afac\processed_data\my-mineru-workspace\output
 data/mineru_output/
+
+# === MD 分块输出（可从 mineru_output 重建） ===
+data/chunks/
