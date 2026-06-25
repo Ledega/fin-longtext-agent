@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class QwenClientConfig:
     """Qwen 客户端配置"""
     model: str = ""                        # 主模型名（默认从环境变量 QWEN_MODEL 读取，fallback qwen3.6-27b）
-    fallback_model: str = "qwen3.6-27b"    # 备用模型（主模型因限流/异常不可用时切换）
+    fallback_model: str = "qwen3.6-plus"    # 备用模型（主模型因限流/异常不可用时切换）
     api_key_env: str = "DASHSCOPE_API_KEY" # API Key 环境变量名
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     max_retries: int = 3

@@ -1,0 +1,87 @@
+{
+  "collection_name": "fin_longtext_chunks",
+  "enable_dynamic_field": false,
+  "fields": [
+    {
+      "auto_id": true,
+      "default_value": null,
+      "dim": null,
+      "dtype": "int64",
+      "element_type": null,
+      "is_primary": true,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "id",
+      "nullable": false
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 256,
+      "name": "doc_id",
+      "nullable": false
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 64,
+      "name": "domain",
+      "nullable": false
+    },
+    {
+      "analyzer_params": {
+        "type": "jieba"
+      },
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "varchar",
+      "element_type": null,
+      "enable_analyzer": true,
+      "enable_match": true,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": 65535,
+      "name": "text",
+      "nullable": false
+    },
+    {
+      "auto_id": false,
+      "default_value": null,
+      "dim": null,
+      "dtype": "sparse_float_vector",
+      "element_type": null,
+      "is_function_output": true,
+      "is_primary": false,
+      "max_capacity": null,
+      "max_length": null,
+      "name": "sparse_bm25",
+      "nullable": false
+    }
+  ],
+  "functions": [
+    {
+      "function_type": 1,
+      "input_field_names": [
+        "text"
+      ],
+      "name": "bm25_func",
+      "output_field_names": [
+        "sparse_bm25"
+      ],
+      "params": {}
+    }
+  ],
+  "schema_format_version": 2,
+  "version": 1
+}

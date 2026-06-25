@@ -125,9 +125,10 @@ class MilvusRetriever:
         self._client: Optional[MilvusClient] = None
 
     def _get_client(self) -> MilvusClient:
-        """延迟初始化 MilvusClient"""
+        """延迟初始化 MilvusClient（首次加载 collection）"""
         if self._client is None:
             self._client = MilvusClient(uri=self._uri)
+            self._client.load_collection(self._collection)
         return self._client
 
     async def search(

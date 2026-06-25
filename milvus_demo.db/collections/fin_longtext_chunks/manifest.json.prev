@@ -1,0 +1,26 @@
+{
+  "active_wal_number": 7,
+  "current_seq": 44574,
+  "index_specs": {
+    "sparse_bm25": {
+      "build_params": {},
+      "field_name": "sparse_bm25",
+      "index_type": "SPARSE_INVERTED_INDEX",
+      "metric_type": "BM25",
+      "search_params": {}
+    }
+  },
+  "manifest_format_version": 2,
+  "partitions": {
+    "_default": {
+      "data_files": [
+        "data\\data_025437_027498.parquet",
+        "data\\data_000001_039498.parquet",
+        "data\\data_039499_044574.parquet"
+      ],
+      "delta_files": []
+    }
+  },
+  "schema_version": 1,
+  "version": 8
+}
