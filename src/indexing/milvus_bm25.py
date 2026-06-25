@@ -7,6 +7,7 @@ Milvus 3.0 服务端原生 BM25 索引模块
 - create_collection()      — 建 Collection + Schema + Function + Index
 - insert_chunks()          — 遍历 data/chunks/*.jsonl → batch insert
 - search_bm25()            — BM25 检索入口
+- search_bm25_multi_doc()  — 支持多 doc_id + domain 同时过滤（专门给 workflow.py）
 - drop_collection()        — 删除 Collection
 
 服务端 BM25 原理：
@@ -20,6 +21,7 @@ import json
 import logging
 import argparse
 from pathlib import Path
+from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 
 from pymilvus import (
@@ -58,6 +60,30 @@ FIELD_DOMAIN = "domain"       # 领域
 FIELD_TEXT = "text"           # 文本（中文 analyzer + enable_match）
 FIELD_SPARSE = "sparse_bm25"  # 服务端 BM25 稀疏向量
 
+
+# ──────────────────────────────────────────────
+# ChunkRow（与 workflow.py 对齐的结构）
+# ──────────────────────────────────────────────
+
+@dataclass
+class ChunkRow:
+    """
+    单条 BM25 检索结果，与 src/qa/workflow.py 的 ChunkRow 完全对齐。
+    用于 search_bm25_multi_doc() 的返回值。
+    """
+    id: int = 0
+    chunk_id: str = ""
+    doc_id: str = ""
+    domain: str = ""
+    text: str = ""
+    heading_path: List[str] = field(default_factory=list)
+    chunk_type: str = "paragraph"
+    distance: float = 0.0
+
+
+# ──────────────────────────────────────────────
+# Collection Schema
+# ──────────────────────────────────────────────
 
 def get_collection_schema() -> dict:
     """
@@ -311,7 +337,7 @@ def insert_chunks(
 
 
 # ──────────────────────────────────────────────
-# BM25 检索
+# BM25 检索（单 doc_id 版，保留向后兼容）
 # ──────────────────────────────────────────────
 
 def search_bm25(
@@ -324,7 +350,7 @@ def search_bm25(
     output_fields: Optional[List[str]] = None,
 ) -> List[Dict]:
     """
-    BM25 检索入口。
+    BM25 检索入口（单 doc_id 版）。
 
     使用 AnnSearchRequest 构建 BM25 稀疏向量检索请求。
     配合 RRFRanker 做多路召回（当前仅一路 BM25，保留扩展性）。
@@ -335,7 +361,7 @@ def search_bm25(
         collection_name: 集合名
         top_k: 返回 top-k 条
         domain_filter: 可选，按领域过滤（如 "insurance"）
-        doc_id_filter: 可选，按 doc_id 过滤（支持前缀匹配）
+        doc_id_filter: 可选，按 doc_id 过滤
         output_fields: 返回字段列表（默认 ["id", "doc_id", "domain", "text"]）
 
     Returns:
@@ -344,20 +370,103 @@ def search_bm25(
     if output_fields is None:
         output_fields = [FIELD_ID, FIELD_DOC_ID, FIELD_DOMAIN, FIELD_TEXT]
 
-    # 构建文本匹配表达式过滤
+    # 构建表达式过滤
     expr_parts = []
     if domain_filter:
         expr_parts.append(f'{FIELD_DOMAIN} == "{domain_filter}"')
     if doc_id_filter:
-        # 用 TEXT_MATCH 在 text 字段上匹配 doc_id（或直接用 ==）
-        # 但 doc_id 本身是 VARCHAR 字段，直接用 ==
         expr_parts.append(f'{FIELD_DOC_ID} == "{doc_id_filter}"')
 
     expr = None
     if expr_parts:
         expr = " and ".join(expr_parts)
 
-    # BM25 检索请求（单路，保留 RRFRanker 框架便于后续多路扩展）
+    return _execute_search(client, query, collection_name, top_k, expr, output_fields)
+
+
+# ──────────────────────────────────────────────
+# BM25 检索（多 doc_id + domain 版，给 workflow.py）
+# ──────────────────────────────────────────────
+
+def search_bm25_multi_doc(
+    client: MilvusClient,
+    query: str,
+    collection_name: str = COLLECTION_NAME,
+    top_k: int = 20,
+    domain_filter: Optional[str] = None,
+    doc_ids: Optional[List[str]] = None,
+    output_fields: Optional[List[str]] = None,
+) -> List[ChunkRow]:
+    """
+    BM25 检索入口（多 doc_id + domain 同时过滤）。
+    专门供 workflow.py 的 AsyncBM25Search 签名使用。
+
+    Args:
+        client: MilvusClient 实例
+        query: 检索 query 字符串
+        collection_name: 集合名
+        top_k: 返回 top-k 条
+        domain_filter: 可选，按领域过滤（如 "insurance"）
+        doc_ids: 可选，按 doc_id 列表过滤（A 榜多文档场景）
+        output_fields: 返回字段列表
+
+    Returns:
+        List[ChunkRow] — 与 workflow.py 签名对齐
+    """
+    if output_fields is None:
+        output_fields = [FIELD_ID, FIELD_DOC_ID, FIELD_DOMAIN, FIELD_TEXT]
+
+    # 构建表达式过滤
+    expr_parts = []
+    if domain_filter:
+        expr_parts.append(f'{FIELD_DOMAIN} == "{domain_filter}"')
+
+    if doc_ids:
+        # 多 doc_id 用 in 表达式
+        ids_quoted = [f'"{did}"' for did in doc_ids]
+        expr_parts.append(f'{FIELD_DOC_ID} in [{", ".join(ids_quoted)}]')
+
+    expr = None
+    if expr_parts:
+        expr = " and ".join(expr_parts)
+
+    raw_results = _execute_search(client, query, collection_name, top_k, expr, output_fields)
+
+    # 转为 ChunkRow
+    rows = []
+    for r in raw_results:
+        rows.append(ChunkRow(
+            id=r.get("id", 0),
+            doc_id=r.get("doc_id", ""),
+            domain=r.get("domain", ""),
+            text=r.get("text", ""),
+            distance=r.get("distance", 0.0),
+        ))
+    return rows
+
+
+def _execute_search(
+    client: MilvusClient,
+    query: str,
+    collection_name: str,
+    top_k: int,
+    expr: Optional[str],
+    output_fields: List[str],
+) -> List[Dict]:
+    """
+    执行 BM25 检索的内部函数。
+
+    Args:
+        client: MilvusClient 实例
+        query: 检索 query 字符串
+        collection_name: 集合名
+        top_k: 返回 top-k 条
+        expr: 过滤表达式
+        output_fields: 返回字段列表
+
+    Returns:
+        [{"id": ..., "doc_id": ..., "domain": ..., "text": ..., "distance": ...}, ...]
+    """
     search_params = {
         "metric_type": "BM25",
     }

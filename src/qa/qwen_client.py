@@ -14,10 +14,13 @@ Qwen API 封装：通过 langchain_openai.ChatOpenAI 调用阿里云百炼 Qwen 
 - 双渠道容灾：主模型不可用时自动切换到备用模型
 - 降温重试
 - 全局 Token 累加器（用于 answer.csv 的 summary 行）
+- async 调用支持（asyncio.to_thread 包裹）
+- 意图分类（CALCULATION / LOOKUP）
 """
 
 import os
 import time
+import asyncio
 import logging
 from typing import Optional, Tuple
 from dataclasses import dataclass
@@ -295,6 +298,78 @@ class QwenClient:
         """
         fixed_prompt = prompt.rstrip() + f"\n\n{retry_instruction}"
         return self.call(fixed_prompt, temperature=temperature)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Async 支持（用 asyncio.to_thread 包裹同步 call）
+    # ═══════════════════════════════════════════════════════════════
+
+    async def call_async(
+        self,
+        prompt: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Tuple[str, int, int]:
+        """
+        异步调用 Qwen 模型（用 asyncio.to_thread 包裹同步 call）。
+
+        Args:
+            prompt: 输入 prompt
+            temperature: 温度（覆盖默认）
+            max_tokens: 最大输出 token（覆盖默认）
+
+        Returns:
+            (response_text, prompt_tokens, completion_tokens)
+        """
+        # 在线程池中执行同步 call
+        return await asyncio.to_thread(
+            self.call,
+            prompt=prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def classify_intent(self, prompt: str) -> str:
+        """
+        意图分类：判断题目是否需要计算。
+
+        Args:
+            prompt: 分类 prompt
+
+        Returns:
+            "CALCULATION" 或 "LOOKUP"
+        """
+        try:
+            resp, pt, ct = await self.call_async(
+                prompt=prompt,
+                temperature=0.0,       # 分类用确定性输出
+                max_tokens=50,         # 分类只需少量 token
+            )
+            resp = resp.strip().upper()
+            if "CALCULATION" in resp:
+                return "CALCULATION"
+        except Exception as e:
+            logger.warning(f"意图分类异常: {e}")
+        return "LOOKUP"
+
+    async def retry_with_fix_async(
+        self,
+        prompt: str,
+        retry_instruction: str,
+        temperature: float = 0.0,
+    ) -> Tuple[str, int, int]:
+        """
+        异步降温重试：附加纠正指令后重新调用。
+
+        Args:
+            prompt: 原始 prompt
+            retry_instruction: 追加的纠正指令
+            temperature: 降温后的温度（默认 0）
+
+        Returns:
+            (response_text, prompt_tokens, completion_tokens)
+        """
+        fixed_prompt = prompt.rstrip() + f"\n\n{retry_instruction}"
+        return await self.call_async(fixed_prompt, temperature=temperature)
 
     def get_token_summary(self) -> dict:
         """获取 Token 消耗汇总"""

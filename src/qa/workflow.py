@@ -7,8 +7,8 @@ A 榜评测路由与调度框架 (Agentic RAG Workflow)
   - CalculationStrategy     : 纯文本计算（BM25→LLM提取数字→Python计算）
 
 依赖注入：
-  - llm_call: async (prompt: str) → str           （对接 QwenClient）
-  - bm25_search: async (query, domain, doc_ids) → [ChunkRow] （对接 Milvus BM25）
+  - qwen_client: QwenClient 实例（提供 sync/async LLM 调用 + 意图分类）
+  - milvus_search: async (query, domain, doc_ids, top_k) → [ChunkRow]
 
 红线：
   - 不使用任何 embedding 模型
@@ -24,9 +24,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Coroutine, List, Dict, Optional, Any, Tuple
-
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +74,7 @@ class RouteResult:
 
 @dataclass
 class ChunkRow:
-    """单条 BM25 检索结果（与 milvus_bm25.search_bm25 输出对齐）"""
+    """单条 BM25 检索结果（与 milvus_bm25.py 的 ChunkRow 对齐）"""
     id: int = 0
     chunk_id: str = ""
     doc_id: str = ""
@@ -106,9 +103,6 @@ class ContextDict:
 # ═══════════════════════════════════════════════════
 # 依赖注入类型签名
 # ═══════════════════════════════════════════════════
-
-# LLM 调用桩：接收 prompt → 返回模型输出文本
-AsyncLLMCall = Callable[[str], Coroutine[Any, Any, str]]
 
 # BM25 检索桩：接收 query + domain + doc_ids + top_k → 返回 ChunkRow 列表
 AsyncBM25Search = Callable[
@@ -143,12 +137,12 @@ class IntentRouter:
         "营业收入增长率", "利润增长率",
     ]
 
-    def __init__(self, llm_call: AsyncLLMCall):
+    def __init__(self, qwen_client):
         """
         Args:
-            llm_call: async (prompt) → str，LLM 调用函数
+            qwen_client: QwenClient 实例（需提供 classify_intent 方法）
         """
-        self._llm_call = llm_call
+        self._client = qwen_client
 
     async def route(self, task: TaskJSON) -> RouteResult:
         """
@@ -178,7 +172,7 @@ class IntentRouter:
         return RouteResult(RouteIntent.LOOKUP, "默认 fallback")
 
     async def _llm_assess(self, task: TaskJSON) -> str:
-        """用 LLM 判断是否涉及计算"""
+        """用 QwenClient.classify_intent 判断是否涉及计算"""
         prompt = (
             f"你是一个金融题目分类器。只回答 CALCULATION 或 LOOKUP。\n\n"
             f"题干：{task.question}\n"
@@ -186,14 +180,7 @@ class IntentRouter:
             f"请判断这道题是否需要做数值计算（如增长率、占比、差额、倍数、超过/低于多少等）？"
             f"如果是 → CALCULATION；如果只是查找条款/事实/定义 → LOOKUP。"
         )
-        try:
-            resp = await self._llm_call(prompt)
-            resp = resp.strip().upper()
-            if "CALCULATION" in resp:
-                return "CALCULATION"
-        except Exception as e:
-            logger.warning(f"LLM 路由评估异常: {e}")
-        return "LOOKUP"
+        return await self._client.classify_intent(prompt)
 
 
 # ═══════════════════════════════════════════════════
@@ -203,13 +190,13 @@ class IntentRouter:
 class BaseStrategy(ABC):
     """策略基类，所有子类必须实现 retrieve()"""
 
-    def __init__(self, llm_call: AsyncLLMCall, bm25_search: AsyncBM25Search):
+    def __init__(self, qwen_client, bm25_search: AsyncBM25Search):
         """
         Args:
-            llm_call: async (prompt) → str
+            qwen_client: QwenClient 实例（提供 async LLM 调用）
             bm25_search: async (query, domain, doc_ids, top_k) → List[ChunkRow]
         """
-        self._llm = llm_call
+        self._client = qwen_client
         self._bm25 = bm25_search
 
     @abstractmethod
@@ -230,6 +217,15 @@ class BaseStrategy(ABC):
         except Exception as e:
             logger.error(f"BM25 检索失败: {e}")
             return []
+
+    async def _llm_call(self, prompt: str) -> str:
+        """便捷的 LLM 调用"""
+        try:
+            text, pt, ct = await self._client.call_async(prompt)
+            return text
+        except Exception as e:
+            logger.error(f"LLM 调用失败: {e}")
+            return ""
 
 
 class ClauseLookupStrategy(BaseStrategy):
@@ -279,7 +275,7 @@ class CrossDocCompareStrategy(BaseStrategy):
     async def retrieve(self, task: TaskJSON) -> ContextDict:
         if not task.doc_ids or len(task.doc_ids) <= 1:
             # 退化到 LOOKUP
-            return await ClauseLookupStrategy(self._llm, self._bm25).retrieve(task)
+            return await ClauseLookupStrategy(self._client, self._bm25).retrieve(task)
 
         # 构造统一 query
         query_parts = [task.question]
@@ -356,7 +352,7 @@ class CalculationStrategy(BaseStrategy):
                 f"从以下选项中提取需要计算的财务指标名称（如'营业收入增长率'、'净利润'），"
                 f"只返回指标名称，不要多余文字。\n选项：{opt_text}"
             )
-            extraction_tasks.append(self._llm(extract_prompt))
+            extraction_tasks.append(self._llm_call(extract_prompt))
 
         metric_names = await asyncio.gather(*extraction_tasks, return_exceptions=True)
 
@@ -371,7 +367,7 @@ class CalculationStrategy(BaseStrategy):
                 f"对于每个数值，标注年份/期间。只返回数字和对应年份，每行一个。"
                 f"如果找不到返回'找不到'。\n\n文本：\n{evidence_text[:3000]}"
             )
-            number_tasks.append(self._llm(prompt))
+            number_tasks.append(self._llm_call(prompt))
 
         number_results = await asyncio.gather(*number_tasks, return_exceptions=True)
 
@@ -432,6 +428,13 @@ STRATEGY_REGISTRY: Dict[RouteIntent, type] = {
 # 智能答题器
 # ═══════════════════════════════════════════════════
 
+RETRY_INSTRUCTION = (
+    "⚠️ 注意：你刚才的输出格式不符合要求。\n"
+    "请只在最后一行输出答案字母，不要输出任何其他字符（包括思考过程、标点符号等）。\n"
+    "例如：A  或  AC  或  B"
+)
+
+
 class AnswerFormatter:
     """
     基于策略产出的上下文，执行最终答案生成。
@@ -439,10 +442,16 @@ class AnswerFormatter:
     分题型：
       - mcq / tf: 单次 LLM 调用，强制输出唯一大写字母
       - multi: Point-wise 并发判决（A/B/C/D 分别判断 True/False），由 Python 拼接
+
+    支持降温重试（通过 QwenClient.retry_with_fix_async）。
     """
 
-    def __init__(self, llm_call: AsyncLLMCall):
-        self._llm = llm_call
+    def __init__(self, qwen_client):
+        """
+        Args:
+            qwen_client: QwenClient 实例
+        """
+        self._client = qwen_client
 
     async def evaluate(
         self,
@@ -470,7 +479,7 @@ class AnswerFormatter:
     # ── 单次调用（单选题 / 判断题）──
 
     async def _single_shot(self, context: ContextDict, task: TaskJSON) -> str:
-        """单次 LLM 调用，综合上下文输出唯一答案字母"""
+        """单次 LLM 调用，综合上下文输出唯一答案字母，含降温重试"""
 
         # 组装上下文（证据 + 计算过程）
         parts = []
@@ -502,13 +511,23 @@ class AnswerFormatter:
             f"最后，单独一行输出答案字母。"
         )
 
+        # --- 第一次调用 ---
         try:
-            resp = await self._llm(prompt)
+            resp, pt, ct = await self._client.call_async(prompt, temperature=0.3)
             answer = self._extract_last_letter(resp)
             if answer:
                 return answer
         except Exception as e:
             logger.error(f"_single_shot LLM 调用失败: {e}")
+
+        # --- 降温重试 ---
+        try:
+            resp, pt, ct = await self._client.retry_with_fix_async(prompt, RETRY_INSTRUCTION, temperature=0.0)
+            answer = self._extract_last_letter(resp)
+            if answer:
+                return answer
+        except Exception as e:
+            logger.error(f"_single_shot 重试失败: {e}")
 
         return "A"  # fallback
 
@@ -534,7 +553,7 @@ class AnswerFormatter:
                 f"这个选项是正确的吗？只回答 True 或 False。"
             )
             try:
-                resp = await self._llm(prompt)
+                resp, pt, ct = await self._client.call_async(prompt, temperature=0.3)
                 return opt_key, "TRUE" in resp.strip().upper()
             except Exception:
                 return opt_key, False
@@ -571,77 +590,8 @@ class AnswerFormatter:
 
 
 # ═══════════════════════════════════════════════════
-# LLM 调用工厂：构建与 QwenClient 一致的 ChatOpenAI 异步包装
+# （已删除）build_llm_call → 改用 QwenClient
 # ═══════════════════════════════════════════════════
-
-def build_llm_call() -> AsyncLLMCall:
-    """
-    构建一个 async (prompt: str) → str 的 LLM 调用函数。
-
-    底层使用 LangChain 的 ChatOpenAI（与 qwen_client.py 一致的初始化方式）：
-      - 模型名从环境变量 QWEN_MODEL 读取（.env 中配置）
-      - API Key 从环境变量 DASHSCOPE_API_KEY 读取
-      - base_url 固定为阿里云百炼 OpenAI 兼容端点
-      - temperature=0.3, max_tokens=2048, timeout=120, enable_thinking=False
-      - 重试 3 次
-
-    Returns:
-        async (prompt: str) → str 的异步可调用对象
-
-    用法：
-        llm_call = build_llm_call()
-        answer = await llm_call("请回答问题...")
-    """
-    api_key = os.environ.get("DASHSCOPE_API_KEY", "")
-    model = os.environ.get("QWEN_MODEL", "qwen3.6-27b")
-
-    fallback_model = "qwen3.6-27b"
-    active_model = model
-
-    async def llm_call(prompt: str) -> str:
-        nonlocal active_model
-        last_error = None
-        max_retries = 3
-        retry_delay = 2.0
-
-        for attempt in range(1, max_retries + 1):
-            try:
-                chat = ChatOpenAI(
-                    model=active_model,
-                    api_key=api_key,
-                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                    temperature=0.3,
-                    max_tokens=2048,
-                    timeout=120,
-                    max_retries=0,
-                    extra_body={"enable_thinking": False},
-                )
-                response = chat.invoke([HumanMessage(content=prompt)])
-                return response.content.strip()
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_server = any(kw in err_str for kw in [
-                    "429", "5xx", "500", "502", "503", "504",
-                    "rate limit", "too many requests", "quota exceeded",
-                    "server error", "service unavailable",
-                    "internal error", "timeout",
-                ])
-                # 如果是服务端错误且尚未切换模型，尝试备用模型
-                if is_server and active_model != fallback_model:
-                    logger.warning(
-                        f"模型 {active_model} 异常，切换至 {fallback_model}: {e}"
-                    )
-                    active_model = fallback_model
-                elif attempt < max_retries:
-                    logger.warning(
-                        f"LLM 调用失败 (attempt {attempt}/{max_retries}): {e}"
-                    )
-                    await asyncio.sleep(retry_delay * attempt)
-
-        raise RuntimeError(f"LLM 调用全部重试失败: {last_error}")
-
-    return llm_call
 
 
 # ═══════════════════════════════════════════════════
@@ -650,7 +600,7 @@ def build_llm_call() -> AsyncLLMCall:
 
 async def process_single_task(
     task_json: dict,
-    llm_call: AsyncLLMCall,
+    qwen_client,
     bm25_search: AsyncBM25Search,
 ) -> str:
     """
@@ -658,7 +608,7 @@ async def process_single_task(
 
     Args:
         task_json: 原始题目 dict（来自 question_loader）
-        llm_call: async (prompt) → str
+        qwen_client: QwenClient 实例
         bm25_search: async (query, domain, doc_ids, top_k) → List[ChunkRow]
 
     Returns:
@@ -667,7 +617,7 @@ async def process_single_task(
     task = TaskJSON.from_raw(task_json)
 
     # ── 路由 ──
-    router = IntentRouter(llm_call)
+    router = IntentRouter(qwen_client)
     route_result = await router.route(task)
     logger.info(f"[{task.qid}] 路由: {route_result.intent.value} ({route_result.reason})")
 
@@ -677,13 +627,13 @@ async def process_single_task(
         logger.warning(f"[{task.qid}] 无对应策略，回退 LOOKUP")
         strategy_cls = ClauseLookupStrategy
 
-    strategy = strategy_cls(llm_call, bm25_search)
+    strategy = strategy_cls(qwen_client, bm25_search)
     context = await strategy.retrieve(task)
     logger.info(f"[{task.qid}] 上下文: evidence={len(context.evidence)}c, "
                 f"calcs={len(context.calculations)}c, nums={len(context.numbers)}")
 
     # ── 答案生成 ──
-    formatter = AnswerFormatter(llm_call)
+    formatter = AnswerFormatter(qwen_client)
     answer = await formatter.evaluate(context, task)
     logger.info(f"[{task.qid}] 答案: {answer}")
 
